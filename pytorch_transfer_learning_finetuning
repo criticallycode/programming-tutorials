@@ -42,7 +42,7 @@ def main():
 
     # Set the directory for the data
 
-    data_dir = '/Users/Daniel/Downloads/PetImages/'
+    data_dir = 'PetImages/'
 
     # Use the image folder function to create datasets.
 
