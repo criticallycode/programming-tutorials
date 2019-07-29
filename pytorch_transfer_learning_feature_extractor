@@ -66,8 +66,8 @@ for f in cat_files:
         shutil.move(f'{cat_train}/{f}', cat_val)  
   
 for f in dog_files:  
-    validationCatsSearchObj = re.search("5\d\d\d", f)  
-    if validationCatsSearchObj:  
+    validationDogsSearchObj = re.search("5\d\d\d", f)  
+    if validationDogtsSearchObj:  
         shutil.move(f'{dog_train}/{f}', dog_val)
 
 ### End Preprocessing ###
@@ -206,18 +206,18 @@ def main():
                 current_loss = 0.0
                 current_corrects = 0
 
-                # Iterate over data.
+                # Here's where the training happens
                 print('Iterating through data...')
 
                 for inputs, labels in dataloaders[phase]:
                     inputs = inputs.to(device)
                     labels = labels.to(device)
 
-                    # zero the parameter gradients
+                    #  We need to zero the gradients, don't forget it
                     optimizer.zero_grad()
 
-                    # forward
-                    # track history if only in train
+                    # Time to carry out the forward training poss
+                    # We only need to log the loss stats if we are in training phase
                     with torch.set_grad_enabled(phase == 'train'):
                         outputs = model(inputs)
                         _, preds = torch.max(outputs, 1)
@@ -228,7 +228,7 @@ def main():
                             loss.backward()
                             optimizer.step()
 
-                    # statistics
+                    # We want variables to hold the loss statistics
                     current_loss += loss.item() * inputs.size(0)
                     current_corrects += torch.sum(preds == labels.data)
 
@@ -238,7 +238,7 @@ def main():
                 print('{} Loss: {:.4f} Acc: {:.4f}'.format(
                     phase, epoch_loss, epoch_acc))
 
-                # deep copy the model
+                # Make a copy of the model if the accuracy on the validation set has improved
                 if phase == 'val' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     best_model_wts = copy.deepcopy(model.state_dict())
@@ -250,7 +250,7 @@ def main():
             time_since // 60, time_since % 60))
         print('Best val Acc: {:4f}'.format(best_acc))
 
-        # load best model weights
+        # Now we'll load in the best model weights and return it
         model.load_state_dict(best_model_wts)
         return model
 
