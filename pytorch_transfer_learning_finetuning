@@ -14,13 +14,71 @@ import time
 import os
 import copy
 
+import shutil  
+import re  
+
+### Data Preprocessing ###
+
+base_dir = "/PetImages/"  
+  
+# create training folder  
+  
+files = os.listdir(base_dir)  
+  
+# Moves all training cat images to cats folder, training dog images to dogs folder  
+def train_maker(name):  
+  
+  train_dir = f"{base_dir}/train/{name}"  
+    
+  for f in files:  
+        search_object = re.search(name, f)  
+        if search_object:  
+          shutil.move(f'{base_dir}/{name}', train_dir)  
+  
+train_maker("Cat")  
+train_maker("Dog")  
+  
+# make the validation directories  
+try:  
+    os.makedirs("val/Cat")  
+    os.makedirs("val/Dog")  
+except OSError:  
+    print ("Creation of the directory %s failed")  
+else:  
+    print ("Successfully created the directory %s ")  
+  
+# create validation folder  
+  
+cat_train = base_dir + "train/Cat/"  
+cat_val = base_dir + "val/Cat/"  
+dog_train = base_dir + "train/Dog/"  
+dog_val = base_dir + "val/Dog/"  
+  
+cat_files = os.listdir(cat_train)  
+dog_files = os.listdir(dog_train)  
+
+# This will put 1000 images from the two training folders
+# into their respective validation folders
+
+for f in cat_files:  
+    validationCatsSearchObj = re.search("5\d\d\d", f)  
+    if validationCatsSearchObj:  
+        shutil.move(f'{cat_train}/{f}', cat_val)  
+  
+for f in dog_files:  
+    validationDogsSearchObj = re.search("5\d\d\d", f)  
+    if validationDogtsSearchObj:  
+        shutil.move(f'{dog_train}/{f}', dog_val)
+
+### End Preprocessing ###
+
 # Note that this main function is only necessary when running PyTorch on Windows
 
 def main():
 
     # Make transforms and use data loaders  
  
-    # We'll use these a lot, so make them 
+    # We'll use these a lot, so make them variables
 
     mean_nums = [0.485, 0.456, 0.406]
     std_nums = [0.229, 0.224, 0.225]
@@ -116,7 +174,7 @@ def main():
             print('Epoch {}/{}'.format(epoch, num_epochs - 1))
             print('-' * 10)
 
-            # Each epoch has a training and validation phase
+            # There's a training and validation phase for every epoch
             for phase in ['train', 'val']:
                 if phase == 'train':
                     scheduler.step()
@@ -127,14 +185,14 @@ def main():
                 current_loss = 0.0
                 current_corrects = 0
 
-                # Iterate over data.
+                # Now we'll iterate through the data
                 print('Iterating through data...')
 
                 for inputs, labels in dataloaders[phase]:
                     inputs = inputs.to(device)
                     labels = labels.to(device)
 
-                    # zero the parameter gradients
+                    # Be sure to zero the parameter gradients during every epoch
                     optimizer.zero_grad()
 
                     # Carry out the forward training pass and log loss only if in training
@@ -144,12 +202,12 @@ def main():
                         _, preds = torch.max(outputs, 1)
                         loss = criterion(outputs, labels)
 
-                        # backward + optimize only if in training phase
+                        # Do backward + optimize only if in training phase
                         if phase == 'train':
                             loss.backward()
                             optimizer.step()
 
-                    # Loss statistics
+                    # Make variables to store the loss statistics
                     current_loss += loss.item() * inputs.size(0)
                     current_corrects += torch.sum(preds == labels.data)
 
@@ -159,7 +217,7 @@ def main():
                 print('{} Loss: {:.4f} Acc: {:.4f}'.format(
                     phase, epoch_loss, epoch_acc))
 
-                # deep copy the model
+                # Now we want to make a copy of the model if the accuracy has improved
                 if phase == 'val' and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     best_model_wts = copy.deepcopy(model.state_dict())
