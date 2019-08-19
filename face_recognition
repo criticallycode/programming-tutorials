@@ -1,0 +1,267 @@
+from random import choice
+from numpy import load, asarray
+from numpy import expand_dims
+from numpy import savez_compressed
+import numpy as np
+from numpy import asarray
+from os import listdir
+from os.path import isdir
+from PIL import Image
+from mtcnn.mtcnn import MTCNN
+from keras.models import load_model
+
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import Normalizer
+from sklearn.svm import SVC
+from matplotlib import pyplot
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import VotingClassifier
+from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score, f1_score
+
+def get_face(image_file, size=(160, 160)):
+    im = Image.open(image_file)
+    im = im.convert('RGB')
+    im_array = np.asarray(im)
+    face_extractor = MTCNN()
+    detected = face_extractor.detect_faces(im_array)
+    x1, y1, width, height = detected[0]['box']
+    xy, y1 = abs(x1), abs(y1)
+    x2, y2 = x1 + width, y1 + height
+    # this actually extracts the face from the region in the bounding box
+    face = im_array[y1:y2, x1:x2]
+    # resize the image
+    image = Image.fromarray(face)
+    image = image.resize(size)
+    resized_face = asarray(image)
+    return resized_face
+
+def extract_from_images(directory):
+    faces = list()
+    # loop through all the files in the given directory
+    for file in listdir(directory):
+        path = directory + file
+        current_face = get_face(path)
+        # append current face to the list of total faces
+        faces.append(current_face)
+    return faces
+
+def make_dataset(directory):
+    X = list()
+    y = list()
+
+    for sub in listdir(directory):
+        path = directory + sub + '/'
+        if not isdir(path):
+            continue
+        faces = extract_from_images(path)
+        labels = [sub for _ in range(len(faces))]
+        X.extend(faces)
+        y.extend(labels)
+        print('>loaded %d examples for class: %s' % (len(faces), sub))
+
+    X = asarray(X)
+    y = asarray(y)
+    return X, y
+
+X_train, y_train = make_dataset('14-celebrity-faces-dataset/data/train/')
+X_test, y_test = make_dataset('14-celebrity-faces-dataset/data/val/')
+
+print(X_train.shape, y_train.shape)
+savez_compressed('14-celebrity-faces-dataset.npz', X_train, y_train, X_test, y_test)
+
+
+### Create The Embeddings ###
+
+def create_embedding(model, face_array):
+    face_array = face_array.astype('float32')
+    # need to standardize the values, so we’ll get the standard deviation and mean
+    mean = face_array.mean()
+    std = face_array.std()
+    face_array = (face_array - mean)/std
+    # convert from array to a sample image
+    sample = np.expand_dims(face_array, axis=0)
+    # get the embedding from the image
+    y_pred = model.predict(sample)
+    return y_pred[0]
+
+data = np.load('14-celebrity-faces-dataset.npz')
+# now get the individual variables from the data
+X_train, y_train, X_test, y_test = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
+
+# Load in the facenet version we’re using
+model = load_model('facenet_keras.h5')
+
+X_train2 = list()
+for face in X_train:
+    embedding = create_embedding(model, face)
+    X_train2.append(embedding)
+X_train2 = np.asarray(X_train2)
+
+X_test2 = list()
+for face in X_test:
+    embedding = create_embedding(model, face)
+    X_test2.append(embedding)
+X_test2 = np.asarray(X_test2)
+
+np.savez_compressed('14-celebrity-faces-embeddings.npz', X_train2, y_train, X_test2, y_test)
+
+#### Test of simple distance recognition ###
+
+def get_face(image_file, size=(160, 160)):
+    im = Image.open(image_file).convert('RGB')
+    im_array = np.asarray(im)
+    face_extractor = MTCNN()
+    detected = face_extractor.detect_faces(im_array)
+    x1, y1, width, height = detected[0]['box']
+    xy, y1 = abs(x1), abs(y1)
+    x2, y2 = x1 + width, y1 + height
+
+    # this actually extracts the face from the region in the bounding box
+    face = im_array[y1:y2, x1:x2]
+    # resize the image
+    image = Image.fromarray(face)
+    image = image.resize(size)
+    resized_face = asarray(image)
+    return resized_face
+
+def extract_from_images(directory):
+    faces = list()
+    # loop through all the files in the given directory
+    for file in listdir(directory):
+        path = directory + file
+        current_face = get_face(path)
+        # append current face to the list of total faces
+        faces.append(current_face)
+    return faces
+
+def make_dataset(directory):
+    X = list()
+    y = list()
+
+    for sub in listdir(directory):
+        path = directory + sub + '/'
+        if not isdir(path):
+            continue
+        faces = extract_from_images(path)
+        labels = [sub for _ in range(len(faces))]
+        X.extend(faces)
+        y.extend(labels)
+    X = asarray(X)
+    y = asarray(y)
+    return X, y
+
+to_embed_1 = get_face("test_image_1.jpg")
+to_embed_2 = get_face("test_image_2.jpg")
+
+image_test_1 = create_embedding(model, to_embed_1)
+image_test_2 = create_embedding(model, to_embed_2)
+
+image_test_1 = image_test_1.reshape(1, -1)
+image_test_2 = image_test_2.reshape(1, -1)
+
+def get_eucilidean(source_image, test_image):
+    euclidean_distance = source_image - test_image
+    euclidean_distance = np.sum(np.multiply(euclidean_distance, euclidean_distance))
+    euclidean_distance = np.sqrt(euclidean_distance)
+    return euclidean_distance
+
+def get_sim(metric, threshold):
+    chosen_threshold = threshold
+    if metric < chosen_threshold:
+        print("They are the same person!")
+    else:
+        print("Insufficient similarity! Not the same person!")
+
+euclidean_distance = get_eucilidean(image_test_1, image_test_2)
+get_sim(euclidean_distance, 0.35)
+
+### Test Classifiers On Embeddings ###
+
+# load faces
+data = load('14-celebrity-faces-dataset.npz')
+X_test_faces = data['arr_2']
+
+data = load('14-celebrity-faces-embeddings.npz')
+X_train, y_train, X_test, y_test = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
+
+in_normalize = Normalizer(norm='l2')
+encoder = LabelEncoder()
+encoder.fit(y_train)
+
+X_train = in_normalize.transform(X_train)
+X_test = in_normalize.transform(X_test)
+y_train = encoder.transform(y_train)
+y_test = encoder.transform(y_test)
+
+SVC_clf = SVC(kernel='linear', probability=True)
+KNN = KNeighborsClassifier(n_neighbors=1, metric='euclidean')
+LogReg = LogisticRegression()
+DT_clf = DecisionTreeClassifier()
+XGB = XGBClassifier()
+
+SVC_fit = SVC_clf.fit(X_train, y_train)
+KNN_fit = KNN.fit(X_train, y_train)
+LogReg_fit = LogReg.fit(X_train, y_train)
+DT_clf_fit = DT_clf.fit(X_train, y_train)
+XGB_fit = XGB.fit(X_train, y_train)
+
+classifiers = [SVC_fit, KNN_fit, LogReg_fit, DT_clf_fit, XGB_fit]
+
+for clf in classifiers:
+    print("Classifier is: " + str(clf.__class__.__name__))
+    preds = clf.predict(X_test)
+    print("Accuracy: " + str(accuracy_score(y_test, preds)))
+
+def test_recognition(ex_num, model):
+    i = 1
+
+    for n in range(ex_num):
+        # Grab a random image from the dataset
+        selection = choice([i for i in range(X_test.shape[0])])
+        random_face_pixels = X_test_faces[selection]
+        random_face_emb = X_test[selection]
+        random_face_class = y_test[selection]
+        random_face_name = encoder.inverse_transform([random_face_class])
+
+        # Now that we have a random example, let's use our chosen model and get a prediction
+        # We'll also store the real value and prediction in a list for later usage
+        samples = expand_dims(random_face_emb, axis=0)
+        pred_class = model.predict(samples)
+        pred_prob = model.predict_proba(samples)
+
+        # Let's print out the label/name of the example
+        # along with the confidence/probability that example belongs to that class
+        class_index = pred_class[0]
+        class_probability = pred_prob[0, class_index] * 100
+        predict_names = encoder.inverse_transform(pred_class)
+        print('Predicted: %s (%.3f)' % (predict_names[0], class_probability))
+        print('Expected: %s' % random_face_name[0])
+
+        # Now place the image on the plot
+        pyplot.subplot(2, 2, i)
+        pyplot.imshow(random_face_pixels)
+        title = '%s (%.3f)' % (predict_names[0], class_probability)
+        pyplot.title(title)
+        i += 1
+
+    # show the image
+    pyplot.show()
+
+test_recognition(4, XGB_fit)
+
+evaluators = [SVC_clf, KNN, LogReg, DT_clf, XGB]
+model = VotingClassifier(estimators=[('SVC', SVC_clf), ('KNN', KNN), ('DT', DT_clf), ('XGB', XGB), ('LogReg', LogReg)], voting='soft')
+model.fit(X_train, y_train)
+preds = model.predict(X_test)
+print(accuracy_score(y_test, preds))
+print(f1_score(y_test, preds, average='micro'))
+
+test_recognition(4, model)
+
+
+# Sources:
+# Thanks to Machine learning mastery at - machinelearningmastery.com/how-to-develop-a-face-recognition-system-using-facenet-in-keras-and-an-svm-classifier/
+# For the basis for this project
